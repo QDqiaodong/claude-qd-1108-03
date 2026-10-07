@@ -56,12 +56,15 @@ CREATE TABLE cellar_batch (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------- 会员 ----------------
+-- level 只允许由积分阈值（普通 <2000、银卡 2000-4999、黑卡 ≥5000）推导，接口不接受手工等级；
+-- version 为乐观锁版本号，资料编辑与出窖/退窖/加减积分并发时拒绝过期提交、保留最新积分。
 CREATE TABLE member (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     phone      VARCHAR(24)  NOT NULL UNIQUE COMMENT '手机号',
     name       VARCHAR(32)  NOT NULL COMMENT '昵称',
-    level      VARCHAR(16)  NOT NULL COMMENT '普通/银卡/黑卡',
-    points     INT          NOT NULL DEFAULT 0 COMMENT '积分',
+    level      VARCHAR(16)  NOT NULL COMMENT '普通/银卡/黑卡（仅由积分阈值推导，不接受手工提交）',
+    points     INT          NOT NULL DEFAULT 0 COMMENT '积分（非负）',
+    version    BIGINT       NOT NULL DEFAULT 0 COMMENT '乐观锁版本号：资料编辑与积分变动并发时拒绝过期提交',
     created_at DATETIME     COMMENT '创建时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -60,8 +60,9 @@ CREATE TABLE member (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     phone      VARCHAR(24)  NOT NULL UNIQUE COMMENT '手机号',
     name       VARCHAR(32)  NOT NULL COMMENT '昵称',
-    level      VARCHAR(16)  NOT NULL COMMENT '普通/银卡/黑卡',
-    points     INT          NOT NULL DEFAULT 0 COMMENT '积分',
+    level      VARCHAR(16)  NOT NULL COMMENT '普通/银卡/黑卡（仅由积分阈值推导，不接受手工提交）',
+    points     INT          NOT NULL DEFAULT 0 COMMENT '积分（非负）',
+    version    BIGINT       NOT NULL DEFAULT 0 COMMENT '乐观锁版本号：资料编辑与积分变动并发时拒绝过期提交',
     created_at DATETIME     COMMENT '创建时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

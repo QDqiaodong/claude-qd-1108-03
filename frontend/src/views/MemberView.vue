@@ -3,9 +3,13 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
-const LEVELS = ['普通', '银卡', '黑卡']
+// 阈值与后端 Dict 保持一致：等级只做展示，从不作为可提交字段
+const SILVER_POINTS = 2000
+const BLACK_POINTS = 5000
+const decideLevel = (points) =>
+  points >= BLACK_POINTS ? '黑卡' : points >= SILVER_POINTS ? '银卡' : '普通'
 const LEVEL_TAG = { '普通': 'info', '银卡': 'warning', '黑卡': 'danger' }
-const FILTERS = ['全部', ...LEVELS]
+const FILTERS = ['全部', '普通', '银卡', '黑卡']
 
 const members = ref([])
 const loading = ref(false)
@@ -23,38 +27,68 @@ async function load() {
 // ---------------- 新增 / 编辑 ----------------
 const dialog = ref(false)
 const editing = ref(null)
-const form = reactive({ phone: '', name: '', level: '普通', points: 0 })
+// 注意：表单里没有 level 字段；等级由积分自动推导，前端只展示结果
+const form = reactive({ phone: '', name: '', points: 0, version: null })
+// 编辑时积分调整需显式发起：只改手机号/昵称不会携带 points，避免顺带改写积分与等级
+const adjustPoints = ref(false)
+const previewLevel = computed(() => decideLevel(Number(form.points) || 0))
 
 function openCreate() {
   editing.value = null
-  Object.assign(form, { phone: '', name: '', level: '普通', points: 0 })
+  Object.assign(form, { phone: '', name: '', points: 0, version: null })
+  adjustPoints.value = false
   dialog.value = true
 }
 function openEdit(m) {
   editing.value = m.id
-  Object.assign(form, { phone: m.phone, name: m.name, level: m.level, points: m.points })
+  Object.assign(form, { phone: m.phone, name: m.name, points: m.points, version: m.version })
+  adjustPoints.value = false
   dialog.value = true
 }
 async function submit() {
+  const payload = { phone: form.phone, name: form.name }
+  if (editing.value) {
+    // 乐观锁：携带打开编辑时的版本号，过期提交由后端拒绝
+    payload.version = form.version
+    if (adjustPoints.value) {
+      if (form.points === null || form.points === undefined || Number(form.points) < 0) {
+        ElMessage.error('积分不能为负')
+        return
+      }
+      payload.points = Number(form.points)
+    }
+  } else {
+    if (form.points === null || form.points === undefined || Number(form.points) < 0) {
+      ElMessage.error('积分不能为负')
+      return
+    }
+    payload.points = Number(form.points)
+  }
   try {
-    if (editing.value) { await api.updateMember(editing.value, { ...form }) }
-    else { await api.createMember({ ...form }) }
-    ElMessage.success('已保存会员')
+    if (editing.value) { await api.updateMember(editing.value, payload) }
+    else { await api.createMember(payload) }
+    ElMessage.success(adjustPoints.value ? '已保存会员，等级按积分重新核定' : '已保存会员')
     dialog.value = false
     await load(); emit('changed')
-  } catch (e) { ElMessage.error(e.message) }
+  } catch (e) {
+    ElMessage.error(e.message)
+    // 并发冲突（版本过期）时刷新列表，让用户看到最新积分后重试
+    if (editing.value && /过期|刚被其他操作更新|已被其他操作更新/.test(e.message)) {
+      await load(); emit('changed')
+    }
+  }
 }
 
-// ---------------- 加积分 ----------------
+// ---------------- 单独增减积分（delta 入口；等级随同一阈值复核） ----------------
 async function addPoints(m) {
   try {
-    const { value } = await ElMessageBox.prompt('本次增加积分（负数为扣减）', `会员 ${m.name}`, {
+    const { value } = await ElMessageBox.prompt('本次增加积分（负数为扣减，扣后不能为负）', `会员 ${m.name}`, {
       inputType: 'number', inputValue: 100, confirmButtonText: '确定', cancelButtonText: '取消'
     })
     const delta = parseInt(value, 10)
     if (Number.isNaN(delta)) return
     await api.addMemberPoints(m.id, delta)
-    ElMessage.success('积分已更新')
+    ElMessage.success('积分已更新，等级已按阈值复核')
     await load(); emit('changed')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message) }
 }
@@ -92,14 +126,39 @@ onMounted(load)
 
     <el-empty v-if="!loading && shown.length === 0" description="暂无会员" />
 
-    <el-dialog v-model="dialog" :title="editing ? '编辑会员' : '新增会员'" width="420px">
-      <el-form label-width="70px">
+    <el-dialog v-model="dialog" :title="editing ? '编辑会员' : '新增会员'" width="440px">
+      <el-form label-width="92px">
         <el-form-item label="手机号"><el-input v-model="form.phone" placeholder="11 位手机号" /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="等级">
-          <el-select v-model="form.level"><el-option v-for="l in LEVELS" :key="l" :label="l" :value="l" /></el-select>
+
+        <!-- 新增：可录入初始积分，等级实时按积分推导，仅展示不可选 -->
+        <el-form-item v-if="!editing" label="初始积分">
+          <el-input-number v-model="form.points" :min="0" />
         </el-form-item>
-        <el-form-item label="积分"><el-input-number v-model="form.points" :min="0" /></el-form-item>
+        <el-form-item v-if="!editing" label="核定等级">
+          <el-tag size="small" :type="LEVEL_TAG[previewLevel]">{{ previewLevel }}</el-tag>
+          <span class="hint">等级由累计积分自动核定，不能手工选择</span>
+        </el-form-item>
+
+        <!-- 编辑：默认只改联系方式；勾选后才携带积分，按新积分重设并复核等级 -->
+        <template v-else>
+          <el-form-item label="当前积分/等级">
+            <span class="ro-points">{{ form.points }}</span>
+            <el-tag size="small" :type="LEVEL_TAG[decideLevel(Number(form.points) || 0)]" style="margin-left:8px">
+              {{ decideLevel(Number(form.points) || 0) }}
+            </el-tag>
+          </el-form-item>
+          <el-form-item label="调整积分">
+            <el-switch v-model="adjustPoints" />
+            <span class="hint">不勾选时仅保存手机号/昵称，积分与等级保持不变；日常加扣分请用卡片上的「加积分」</span>
+          </el-form-item>
+          <el-form-item v-if="adjustPoints" label="新积分">
+            <el-input-number v-model="form.points" :min="0" />
+            <el-tag size="small" :type="LEVEL_TAG[previewLevel]" style="margin-left:8px">
+              保存后核定为「{{ previewLevel }}」
+            </el-tag>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
@@ -127,4 +186,6 @@ onMounted(load)
 .points { font-size: 13px; color: var(--ink); }
 .points strong { color: var(--primary); }
 .ops { display: flex; flex-direction: column; gap: 6px; }
+.hint { color: var(--muted); font-size: 12px; margin-left: 8px; }
+.ro-points { font-weight: 700; color: var(--primary); }
 </style>

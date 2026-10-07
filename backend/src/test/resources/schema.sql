@@ -37,6 +37,7 @@ CREATE TABLE member (
     name       VARCHAR(32)  NOT NULL,
     level      VARCHAR(16)  NOT NULL,
     points     INT          NOT NULL DEFAULT 0,
+    version    BIGINT       NOT NULL DEFAULT 0,
     created_at DATETIME
 );
 
