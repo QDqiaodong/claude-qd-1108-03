@@ -1,0 +1,29 @@
+:root {
+  /* 酒红主色 */
+  --primary: #7B2D4A;          /* 酒红 */
+  --primary-deep: #63203B;     /* dark-2 */
+  --primary-soft: #BD7A8E;     /* light-5 */
+  --primary-wash: #EED8DD;     /* light-9 */
+  --ink: #3a2a30;
+  --muted: #9a7b85;
+  --line: #ecd9df;
+  --bg: #f8f1f3;
+
+  --el-color-primary: #7B2D4A;
+  --el-color-primary-light-3: #A3556E;
+  --el-color-primary-light-5: #BD7A8E;
+  --el-color-primary-light-7: #D2A3AE;
+  --el-color-primary-light-8: #DBB4BE;
+  --el-color-primary-light-9: #EED8DD;
+  --el-color-primary-dark-2: #63203B;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
